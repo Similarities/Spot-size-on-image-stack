@@ -11,7 +11,7 @@ def get_file_list(path_picture):
     tif_files = []
     counter = 0
     for file in os.listdir(path_picture):
-        print(file)
+        #print(file)
         try:
             if file.endswith(".tif"):
                 tif_files.append(str(file))
