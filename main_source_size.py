@@ -127,7 +127,7 @@ class BatchStack:
         print('...saving:', file_name)
         plt.figure(5)
         x_axis = np.arange(0, len(self.file_list))
-        plt.scatter(x_axis, self.folder_result_sigma[:,2], label = "FWHM avg" + description1)
+        plt.scatter(x_axis, self.folder_result_sigma[:,3], label = "FWHM avg" + description1)
         plt.scatter(x_axis, self.folder_result_sigma[:,1], label = 'vertical w(z)', color = "y")
         plt.scatter(x_axis, self.folder_result_sigma[:,0], label = 'horizontal w(z)', color = "c")
         plt.xlabel('shot number')
@@ -141,10 +141,10 @@ class BatchStack:
 
 
 
-path = "data/945ms_11k/"
+path = "data/1x25ms_11k_cropped/"
 my_result = BatchStack(path)
 my_result.evaluate_folder()
 my_result.beamwaist_to_FWHM()
 my_result.scale_result(13.5/6.79)
-my_result.save_data('945ms_11k_', "20210310_source_size_")
+my_result.save_data('25ms_11k_cr', "20210310_source_size_")
 plt.show()
