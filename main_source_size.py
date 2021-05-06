@@ -4,8 +4,6 @@ import basic_image_app
 from lmfit.models import GaussianModel
 import math
 
-file_data = "data/3x945ms_11k_cropped/210310_PM031616.tif"
-
 
 class SourceSize:
     def __init__(self, file):
@@ -19,7 +17,7 @@ class SourceSize:
         self.sigma_temp = 0
         self.amplitude_temp = 0
         self.center_temp = 0
-        self.result = np.empty([1, 2])
+        self.result = np.empty([1, 4])
 
     def evaluate_index_of_maximum_in_picture(self):
         self.index_y, self.index_x_axis = np.where(self.image >= np.amax(self.image))
@@ -51,9 +49,11 @@ class SourceSize:
 
     def evaluate_horizontal_and_vertical(self):
         self.fit_gaussian(self.x_axis_horizontal, self.line_out_horizontal, 3)
-        self.result[0,0] = self.sigma_temp
-        self.fit_gaussian(self.x_axis_vertical, self.line_out_vertical[:,0], 2)
+        self.result[0, 0] = self.sigma_temp
+        self.result[0, 2] = self.center_temp
+        self.fit_gaussian(self.x_axis_vertical, self.line_out_vertical[:, 0], 2)
         self.result[0, 1] = self.sigma_temp
+        self.result[0, 3] = self.center_temp
         return self.result
 
     def fit_gaussian(self, array_x, array_y, figure_number):
@@ -87,7 +87,8 @@ class BatchStack:
     def __init__(self, path):
         self.folder_name = path
         self.file_list = basic_image_app.get_file_list(self.folder_name)
-        self.folder_result_sigma = np.empty([1, 2])
+        self.folder_result_sigma = np.empty([1, 4])
+        self.label = "px"
 
     def evaluate_folder(self):
         for x in self.file_list:
@@ -98,53 +99,74 @@ class BatchStack:
         print('############')
         print(self.folder_name)
         self.folder_result_sigma = self.folder_result_sigma[1:]
+        self.pointing_vertical()
+        self.pointing_horizontal()
+        self.beamwaist_to_FWHM()
         return self.folder_result_sigma, len(self.file_list)
 
     def beamwaist_to_FWHM(self):
-        FWHM = np.empty([len(self.file_list),2])
-        FWHM[:,0] =((self.folder_result_sigma[:, 0] ** 2 + self.folder_result_sigma[:, 1] ** 2) ** 0.5)
-        #sigma in the gaussian fit is w(z) beam-waist radius : w(z) = FWHM/(2*ln2)**0.5 (see wiki gaussian beams)
-        FWHM[:,1] = ((self.folder_result_sigma[:, 0] ** 2 + self.folder_result_sigma[:, 1] ** 2) ** 0.5) * (2 * 0.69) ** 0.5
-        self.folder_result_sigma =  np.hstack((self.folder_result_sigma, FWHM))
+        FWHM = np.empty([len(self.file_list), 2])
+        FWHM[:, 0] = ((self.folder_result_sigma[:, 0] ** 2 + self.folder_result_sigma[:, 1] ** 2) ** 0.5)
+        # sigma in the gaussian fit is w(z) beam-waist radius : w(z) = FWHM/(2*ln2)**0.5 (see wiki gaussian beams)
+        FWHM[:, 1] = ((self.folder_result_sigma[:, 0] ** 2 + self.folder_result_sigma[:, 1] ** 2) ** 0.5) * (
+                    2 * 0.69) ** 0.5
+        self.folder_result_sigma = np.hstack((self.folder_result_sigma, FWHM))
         return self.folder_result_sigma
 
-    def scale_result(self, const):
-        self.folder_result_sigma[:,:] = self.folder_result_sigma[:,:] * const
+    def scale_result(self, const, label):
+        self.label = label
+        self.folder_result_sigma[:, :] = self.folder_result_sigma[:, :] * const
+        return self.folder_result_sigma, self.label
+
+    def pointing_vertical(self):
+        mean_position = np.mean(self.folder_result_sigma[:, 2])
+        self.folder_result_sigma[:, 2] = self.folder_result_sigma[:, 2] - mean_position
         return self.folder_result_sigma
 
-
+    def pointing_horizontal(self):
+        mean_position = np.mean(self.folder_result_sigma[:, 3])
+        self.folder_result_sigma[:, 3] = self.folder_result_sigma[:, 3] - mean_position
+        return self.folder_result_sigma
 
     def prepare_header(self, description1):
         # insert header line and change index
-        names = (['file' , self.folder_name,  description1, "----"])
+        names = (['file', self.folder_name, description1, "unit: ", self.label, "..."])
         parameter_info = (
-            ["vertical w(z)" , "  horizontal w(z)", "w(z) avg   ",  "FWHM avg v+h"])
-        return np.vstack((parameter_info, names,  self.folder_result_sigma))
+            ["vertical w(z)", "  horizontal w(z)", "pointing_vertical ", "pointing_horizontal", "FWHM_v", "FWHM_h"])
+        return np.vstack((parameter_info, names, self.folder_result_sigma))
 
     def save_data(self, description1, file_name):
-
         result = self.prepare_header(description1)
         print('...saving:', file_name)
+
         plt.figure(5)
         x_axis = np.arange(0, len(self.file_list))
-        plt.scatter(x_axis, self.folder_result_sigma[:,3], label = "FWHM avg" + description1)
-        plt.scatter(x_axis, self.folder_result_sigma[:,1], label = 'vertical w(z)', color = "y")
-        plt.scatter(x_axis, self.folder_result_sigma[:,0], label = 'horizontal w(z)', color = "c")
+        plt.scatter(x_axis, self.folder_result_sigma[:, 1], label='vertical w(z) ' +file_name[-2:], color="y")
+        plt.scatter(x_axis, self.folder_result_sigma[:, 0], label='horizontal w(z) '+file_name[-2:], color="c")
         plt.xlabel('shot number')
-        plt.ylabel('um')
-        plt.ylim(8,50)
+        plt.ylabel(self.label)
+        plt.ylim(400,2500)
         plt.legend()
-        plt.savefig(file_name + description1+ ".png", bbox_inches="tight", dpi=500)
+        plt.savefig(file_name + description1 + ".png", bbox_inches="tight", dpi=500)
+
+        plt.figure(6)
+        plt.scatter(x_axis, self.folder_result_sigma[:, 3], label="pointing_horizontal " + file_name[-2:])
+        plt.scatter(x_axis, self.folder_result_sigma[:, 2], label="pointing_vertical " +file_name[-2:])
+        plt.xlabel("shot no")
+        plt.ylabel(self.label)
+        plt.ylim(-600, 600)
+        plt.legend()
+        plt.savefig(file_name + "pointing" + ".png", bbox_inches="tight", dpi=500)
+
         np.savetxt(file_name + description1 + ".txt", result, delimiter=' ',
                    header='string', comments='',
                    fmt='%s')
 
 
-
-path = "data/1x25ms_11k_cropped/"
+path = "data/Pointing2/210505/resized_1s/"
 my_result = BatchStack(path)
 my_result.evaluate_folder()
-my_result.beamwaist_to_FWHM()
-my_result.scale_result(13.5/6.79)
-my_result.save_data('25ms_11k_cr', "20210310_source_size_")
+# rescale is factor for e.g. px or magnification size
+my_result.scale_result(13.5, "um")
+my_result.save_data('Pointing_2', "20210505_HHG_source_He_1s")
 plt.show()
