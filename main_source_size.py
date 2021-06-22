@@ -6,10 +6,12 @@ import math
 
 
 class SourceSize:
-    def __init__(self, file):
+    def __init__(self, file, width_area):
         self.file_name = file[-19:-4]
         self.image = basic_image_app.read_image(file)
         self.index_y, self.index_x_axis = self.evaluate_index_of_maximum_in_picture()
+        self.width_area = width_area
+        self.center_of_intensity()
         self.x_axis_vertical, self.line_out_vertical = self.vertical_line_out()
         self.x_axis_horizontal, self.line_out_horizontal = self.horizontal_line_out()
         self.line_out_horizontal = self.zero_offset(self.line_out_horizontal)
@@ -21,7 +23,30 @@ class SourceSize:
 
     def evaluate_index_of_maximum_in_picture(self):
         self.index_y, self.index_x_axis = np.where(self.image >= np.amax(self.image))
-        print(np.amax(self.image), 'max', self.file_name)
+        # sometimes np.where has more than one coordinate:
+        self.index_y = self.index_y[0]
+        self.index_x_axis = self.index_x_axis[0]
+        print(np.amax(self.image), 'max', self.file_name, self.index_y, self.index_x_axis)
+        return self.index_y, self.index_x_axis
+
+    def center_lineout_on_image(self):
+        plt.figure(12)
+        plt.imshow(self.image[int(self.index_y - self.width_area / 2): int(self.index_y + self.width_area / 2),
+                   int(self.index_x_axis - self.width_area / 2): int(self.index_x_axis + self.width_area / 2)])
+
+    def center_of_intensity(self):
+        print('before', self.index_y, self.index_x_axis)
+        y_up = int(self.index_y - self.width_area / 2)
+        y_down = int(y_up + self.width_area)
+        x_left = int(self.index_x_axis - self.width_area / 2)
+        x_right = int(x_left + self.width_area)
+        sum_of_y_line = np.sum(self.image[y_up: y_down, x_left:x_right], axis=1)
+        sum_of_x_line = np.sum(self.image[y_up: y_down, x_left:x_right], axis=0)
+        plt.legend()
+        self.index_y = int(np.where(sum_of_y_line[:] >= np.amax(sum_of_y_line))[0] - self.width_area / 2 + self.index_y)
+        self.index_x_axis = int(
+            np.where(sum_of_x_line[:] >= np.amax(sum_of_x_line))[0] - self.width_area / 2 + self.index_x_axis)
+        print('after:', self.index_y, self.index_x_axis)
         return self.index_y, self.index_x_axis
 
     def plot_results(self):
@@ -51,7 +76,7 @@ class SourceSize:
         self.fit_gaussian(self.x_axis_horizontal, self.line_out_horizontal, 3)
         self.result[0, 0] = self.sigma_temp
         self.result[0, 2] = self.center_temp
-        self.fit_gaussian(self.x_axis_vertical, self.line_out_vertical[:, 0], 2)
+        self.fit_gaussian(self.x_axis_vertical, self.line_out_vertical, 2)
         self.result[0, 1] = self.sigma_temp
         self.result[0, 3] = self.center_temp
         return self.result
@@ -67,7 +92,7 @@ class SourceSize:
         return self.sigma_temp, self.amplitude_temp, self.center_temp
 
     def zero_offset(self, array):
-        offset = np.mean(array[1:100])
+        offset = np.mean(array[0:1])
         return array[:] - offset
 
     def plot_fit_function(self, array_x, figure_number):
@@ -81,18 +106,24 @@ class SourceSize:
 
         plt.figure(figure_number)
         plt.plot(array_x, yy)
+        if figure_number == 2:
+            plt.plot(self.x_axis_vertical, self.line_out_vertical)
+        else:
+            plt.plot(self.x_axis_horizontal, self.line_out_horizontal)
 
 
 class BatchStack:
-    def __init__(self, path):
+    def __init__(self, path, width):
         self.folder_name = path
         self.file_list = basic_image_app.get_file_list(self.folder_name)
         self.folder_result_sigma = np.empty([1, 4])
         self.label = "px"
+        self.width = width
 
     def evaluate_folder(self):
         for x in self.file_list:
-            SinglePicture = SourceSize(self.folder_name + x)
+            print("file:", x)
+            SinglePicture = SourceSize(self.folder_name + x, self.width)
             result = SinglePicture.evaluate_horizontal_and_vertical()
             self.folder_result_sigma = np.vstack((self.folder_result_sigma, result))
 
@@ -109,7 +140,7 @@ class BatchStack:
         FWHM[:, 0] = ((self.folder_result_sigma[:, 0] ** 2 + self.folder_result_sigma[:, 1] ** 2) ** 0.5)
         # sigma in the gaussian fit is w(z) beam-waist radius : w(z) = FWHM/(2*ln2)**0.5 (see wiki gaussian beams)
         FWHM[:, 1] = ((self.folder_result_sigma[:, 0] ** 2 + self.folder_result_sigma[:, 1] ** 2) ** 0.5) * (
-                    2 * 0.69) ** 0.5
+                2 * 0.69) ** 0.5
         self.folder_result_sigma = np.hstack((self.folder_result_sigma, FWHM))
         return self.folder_result_sigma
 
@@ -120,16 +151,30 @@ class BatchStack:
 
     def pointing_vertical(self):
         mean_position = np.mean(self.folder_result_sigma[:, 2])
+        print("vertical")
+        self.statistics_pointing(self.folder_result_sigma[:, 2])
         self.folder_result_sigma[:, 2] = self.folder_result_sigma[:, 2] - mean_position
+
         return self.folder_result_sigma
 
     def pointing_horizontal(self):
         mean_position = np.mean(self.folder_result_sigma[:, 3])
+        print("horizontal")
+        self.statistics_pointing(self.folder_result_sigma[:, 3])
         self.folder_result_sigma[:, 3] = self.folder_result_sigma[:, 3] - mean_position
         return self.folder_result_sigma
 
+    def statistics_pointing(self, array):
+        print('pointing mean in px:', np.mean(array), 'std in px', np.std(array))
+
+    def statistics_divergence(self, array):
+        print("divergence mean in mrad:",np.mean(array), 'std', np.std(array))
+
+
     def prepare_header(self, description1):
         # insert header line and change index
+        self.statistics_divergence(self.folder_result_sigma[:,0])
+        self.statistics_divergence(self.folder_result_sigma[:,1])
         names = (['file', self.folder_name, description1, "unit: ", self.label, "..."])
         parameter_info = (
             ["vertical w(z)", "  horizontal w(z)", "pointing_vertical ", "pointing_horizontal", "FWHM_v", "FWHM_h"])
@@ -141,20 +186,20 @@ class BatchStack:
 
         plt.figure(5)
         x_axis = np.arange(0, len(self.file_list))
-        plt.scatter(x_axis, self.folder_result_sigma[:, 1], label='vertical w(z) ' +file_name[-2:], color="y")
-        plt.scatter(x_axis, self.folder_result_sigma[:, 0], label='horizontal w(z) '+file_name[-2:], color="c")
+        plt.scatter(x_axis, self.folder_result_sigma[:, 1], label='vertical w(z) ' + file_name[-18:-5], color="y")
+        plt.scatter(x_axis, self.folder_result_sigma[:, 0], label='horizontal w(z) ' + file_name[-18:-5], color="c")
         plt.xlabel('shot number')
         plt.ylabel(self.label)
-        plt.ylim(400,2500)
+        plt.ylim(0, 1)
         plt.legend()
         plt.savefig(file_name + description1 + ".png", bbox_inches="tight", dpi=500)
 
         plt.figure(6)
-        plt.scatter(x_axis, self.folder_result_sigma[:, 3], label="pointing_horizontal " + file_name[-2:])
-        plt.scatter(x_axis, self.folder_result_sigma[:, 2], label="pointing_vertical " +file_name[-2:])
+        plt.scatter(x_axis, self.folder_result_sigma[:, 3], label="pointing_horizontal " + file_name[-18:-5])
+        plt.scatter(x_axis, self.folder_result_sigma[:, 2], label="pointing_vertical " + file_name[-18:-5])
         plt.xlabel("shot no")
         plt.ylabel(self.label)
-        plt.ylim(-600, 600)
+        plt.ylim(-0.3, 0.3)
         plt.legend()
         plt.savefig(file_name + "pointing" + ".png", bbox_inches="tight", dpi=500)
 
@@ -163,10 +208,16 @@ class BatchStack:
                    fmt='%s')
 
 
-path = "data/Pointing2/210505/resized_1s/"
-my_result = BatchStack(path)
+path = "data/210611_d_roi/"
+# requires, path, width_of area to calculate center of intensity (must be in row of 2)
+my_result = BatchStack(path, 100)
 my_result.evaluate_folder()
+
 # rescale is factor for e.g. px or magnification size
-my_result.scale_result(13.5, "um")
-my_result.save_data('Pointing_2', "20210505_HHG_source_He_1s")
+my_result.scale_result(13.5E-6, "m")
+my_result.scale_result(1000/2.625, "mrad")
+my_result.save_data('Pointing_div_', "20210611_d_")
 plt.show()
+
+
+print(13.5E-6*1000/2.625, 'scale px to mrad')
