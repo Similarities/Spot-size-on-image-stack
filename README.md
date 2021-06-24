@@ -9,8 +9,7 @@ Reads images, determines position of maximum via center of mass method  (maximum
 Batch_list does this for each picture in folder and determines from center-position mean value of position and calculates for each
 center-position deviation from mean value. Batch_list includes save and plots for sigma and pointing.
 
-- PointingDistribution
--  (how the pointing is distributed over space for long shot series) 
+- PointingDistribution -how the pointing is distributed over space for long shot series
 Note: this depends on a particular binsize, meaning: a high numerical accuracy with a low number of statistical events (pictures) will lead to single events
 in the distribution. In order to account for this and to collect the events in a particular paremetric range, the distribution evaluation needs to decrease the accuracy (decimal_bin). Example: the pointing is given up to a accuracy of 0.0000001 (or else given by datatype not by measurement accuracy), we want to summarize all events in relative bins of an accuracy of 0.01 -> set decimal_bin to 2. The implementation is simply done by np.round(data, decimal_bin) in the script.
 
