@@ -9,6 +9,11 @@ Reads images, determines position of maximum via center of mass method  (maximum
 Batch_list does this for each picture in folder and determines from center-position mean value of position and calculates for each
 center-position deviation from mean value. Batch_list includes save and plots for sigma and pointing.
 
+- background substraction method with statistical mean back -img from image stack included
+- initial guess for maximum can be given in coordinates
+- crop picture (ROI method)
+
+
 - PointingDistribution - how the pointing is distributed over space for long shot series
 
 Note: this depends on a particular binsize, meaning: a high numerical accuracy with a low number of statistical events (pictures) will lead to single events
