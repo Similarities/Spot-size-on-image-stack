@@ -8,4 +8,5 @@
 *.idea
 *.txt
 *.ideagit
-
+*.pyc
+/pychache
