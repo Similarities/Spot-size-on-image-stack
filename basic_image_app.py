@@ -13,7 +13,7 @@ def get_file_list(path_picture):
     for file in os.listdir(path_picture):
         #print(file)
         try:
-            if file.endswith(".tif"):
+            if file.endswith(".tif") or file.endswith('.tiff'):
                 tif_files.append(str(file))
                 counter = counter + 1
             else:
@@ -35,9 +35,10 @@ class ImageStackMeanValue:
         self.result = np.zeros([2052, 2048])
 
     def average_stack(self):
+
         for x in self.file_list:
             x = str(self.file_path + '/' + x)
-            picture_x = read_image(x)
+            picture_x = plt.imread(x)
             picture_x = convert_32_bit(picture_x)
             self.result = self.result + picture_x
 
