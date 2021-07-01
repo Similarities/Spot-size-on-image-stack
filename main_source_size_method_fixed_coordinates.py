@@ -10,6 +10,7 @@ import math
 # width area: searching area (in px) for center of mass determination
 # Attention: you might change the self.file_name borders of your file_name string
 # Attention2: you might need to change the scaling (see below) and unit-name
+# Attention3: in background function: MANUALLY set threshold for "hot pixel" correction
 
 
 class SourceSize:
@@ -45,6 +46,7 @@ class SourceSize:
             # ! Atttention ! if anything is <0 the value is at maximum of dynamic range
             self.image[:,:] = self.image[:,:] - self.back_ground[:,:]*scale
             self.image[self.image < 0] = 0
+            self.image[self.image > 8000] = 1
             return self.image
 
 
@@ -234,11 +236,11 @@ class BatchStack:
         plt.savefig(file_name + description1 + ".png", bbox_inches="tight", dpi=500)
 
         plt.figure(6)
-        plt.scatter(x_axis, self.folder_result_sigma[:, 3], label="pointing_horizontal " + file_name[-18:-5])
-        plt.scatter(x_axis, self.folder_result_sigma[:, 2], label="pointing_vertical " + file_name[-18:-5])
+        plt.scatter(x_axis, self.folder_result_sigma[:, 3], label="pointing_vertical " + file_name[-18:-5])
+        plt.scatter(x_axis, self.folder_result_sigma[:, 2], label="pointing_horizontal " + file_name[-18:-5])
         plt.xlabel("shot no")
         plt.ylabel(self.label)
-        #plt.ylim(-70, 70)
+        #plt.ylim(-100, 70)
         plt.legend()
         plt.savefig(file_name + "pointing" + ".png", bbox_inches="tight", dpi=500)
 
@@ -247,21 +249,22 @@ class BatchStack:
                    fmt='%s')
 
 
-path = "data/30ms_m2500_gauge_off/"
-path_back = "data/30ms_dark/"
+path = "data/10ms_m2500_gauge_off/"
+path_back = "data/10ms_dark/"
 avg_background_image = basic_image_app.ImageStackMeanValue(basic_image_app.get_file_list(path_back), path_back)
 avg_backround_img = avg_background_image.average_stack()
 # requires, path, width_of area to calculate center of intensity (must be in row of 2)
 
 #tofill: path, background_image or None, coordinates - in relation to crop-coordinates (see class 1)
-crop_coordinates = ([0,200, 1220,1420])
-fixed_coordinates = ([170,140])
+crop_coordinates = ([0,300, 1150,1420])
+fixed_coordinates = ([150,150])
 my_result = BatchStack(path, avg_backround_img,100, crop_coordinates, fixed_coordinates)
 my_result.evaluate_folder()
 
 # rescale is factor for e.g. px or magnification size, changes (float, str()) str is unit name
 my_result.scale_result(13.5/7.42, "um")
 #my_result.scale_result(1000/2.625, "mrad")
-my_result.save_data('XPL', "20210623_30ms_pos1")
+my_result.save_data('XPL', "20210623_10ms_pos1_threshold")
+plt.ylim(-60,60)
 plt.show()
 
