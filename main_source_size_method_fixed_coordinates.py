@@ -15,7 +15,7 @@ import math
 
 class SourceSize:
     def __init__(self, file, img_background, width_area, crop_coordinates, coordinates):
-        self.file_name = file[-19:-4]
+        self.file_name = file[0:-4]
         self.image = basic_image_app.read_image(file)
         self.image = basic_image_app.convert_32_bit(self.image)
         self.back_ground = img_background
@@ -40,13 +40,14 @@ class SourceSize:
             return self.image
 
         else:
-            roi_img = np.mean(self.image[2000:-1, 2000:-1])
-            roi_back = np.mean(self.back_ground[2000:-1, 2000:-1])
+            roi_img = np.mean(self.image[0:250, 400:-1])
+            roi_back = np.mean(self.image[0:250, 400:-1])
             scale = roi_img/roi_back
             # ! Atttention ! if anything is <0 the value is at maximum of dynamic range
             self.image[:,:] = self.image[:,:] - self.back_ground[:,:]*scale
             self.image[self.image < 0] = 0
-            self.image[self.image > 8000] = 1
+            #threshhold
+            self.image[self.image > 65000] = 1
             return self.image
 
 
@@ -54,8 +55,6 @@ class SourceSize:
         # 0 = x, 1=y
         self.image = self.image[self.crop_coordinates[0]:self.crop_coordinates[1], self.crop_coordinates[2]:self.crop_coordinates[3]]
         return self.image
-
-
 
     def evaluate_index_of_maximum_in_picture(self):
         # does not work with hot pixels
@@ -83,7 +82,20 @@ class SourceSize:
         self.index_x_axis = int(
             np.where(sum_of_x_line[:] >= np.amax(sum_of_x_line))[0] - self.width_area / 2 + self.index_x_axis)
         print('after:', self.index_y, self.index_x_axis)
+
         return self.index_y, self.index_x_axis
+
+
+    def integrate_intensity_in_range_width(self):
+        small_roi = self.image[int(self.index_y - self.width_area / 2):int(self.index_y + self.width_area / 2),
+                   int(self.index_x_axis - self.width_area / 2): int(self.index_x_axis + self.width_area / 2)]
+
+        sum = np.sum(small_roi, axis = 0)
+        sum = np.sum(small_roi)
+        print("sum of center +/- ",self.width_area, sum)
+        return sum
+
+
 
     def plot_results(self):
         plt.figure(1)
@@ -92,8 +104,6 @@ class SourceSize:
         plt.vlines(x=self.index_x_axis, ymin=0, ymax=len(self.image), color="y")
         plt.figure(2)
         plt.plot(self.x_axis_vertical, self.line_out_vertical, color="b")
-        plt.figure(1)
-        plt.hlines(y=self.index_y, xmin=0, xmax=len(self.line_out_horizontal))
         plt.figure(3)
         plt.plot(self.x_axis_horizontal, self.line_out_horizontal, color="r")
 
@@ -158,6 +168,7 @@ class BatchStack:
         self.crop_coordinates = crop_coordinates
         self.coordinates = coordinates
         self.img_background = avg_img_back
+        self.integrated = np.zeros([len(self.file_list)])
 
 
 
@@ -167,6 +178,9 @@ class BatchStack:
             SinglePicture = SourceSize(self.folder_name + x, self.img_background, self.width, self.crop_coordinates, self.coordinates)
             result = SinglePicture.evaluate_horizontal_and_vertical()
             self.folder_result_sigma = np.vstack((self.folder_result_sigma, result))
+            self.integrated[counter] = SinglePicture.integrate_intensity_in_range_width()
+            SinglePicture.plot_results()
+            #plt.show()
 
         print('############')
         print(self.folder_name)
@@ -174,14 +188,29 @@ class BatchStack:
         self.pointing_vertical()
         self.pointing_horizontal()
         self.beamwaist_to_FWHM()
+        self.integrated_signal()
         return self.folder_result_sigma, len(self.file_list)
+
+    def integrated_signal(self):
+        x = np.linspace(0,len(self.integrated), len(self.integrated))
+        print(len(x), "x")
+        print(len(self.integrated), "y")
+        avg = np.mean(self.integrated)
+        sigma = np.std(self.integrated)
+        plt.figure(10)
+        plt.scatter(x,self.integrated, label = " stability decimal (" +  str(round(sigma/avg, 3)) +")" )
+        plt.xlabel("shot no")
+        plt.ylabel("integrated counts")
+        plt.legend()
+        plt.savefig(  self.folder_name[5:-2] + "Intensity" + ".png", bbox_inches="tight", dpi=500)
 
     def beamwaist_to_FWHM(self):
         FWHM = np.empty([len(self.file_list), 2])
-        FWHM[:, 0] = ((self.folder_result_sigma[:, 0] ** 2 + self.folder_result_sigma[:, 1] ** 2) ** 0.5)
+        #[:,0] horizontal
+        #[:,1] vertical
+        FWHM[:, 0] = 2* self.folder_result_sigma[:, 0]*(2 * 0.69) ** 0.5
         # sigma in the gaussian fit is w(z) beam-waist radius : w(z) = FWHM/(2*ln2)**0.5 (see wiki gaussian beams)
-        FWHM[:, 1] = ((self.folder_result_sigma[:, 0] ** 2 + self.folder_result_sigma[:, 1] ** 2) ** 0.5) * (
-                2 * 0.69) ** 0.5
+        FWHM[:, 1] = ( 2* self.folder_result_sigma[:, 1]) * (2 * 0.69) ** 0.5
         self.folder_result_sigma = np.hstack((self.folder_result_sigma, FWHM))
         return self.folder_result_sigma
 
@@ -206,7 +235,7 @@ class BatchStack:
         return self.folder_result_sigma
 
     def statistics_pointing(self, array):
-        print('pointing mean in px:', np.mean(array), 'std in px', np.std(array))
+        print('pointing position 0 mean in px:', np.mean(array), 'std in px', np.std(array))
 
     def statistics_divergence(self, array):
         print("size mean i:" + self.label ,np.mean(array), 'std', np.std(array))
@@ -218,7 +247,7 @@ class BatchStack:
         self.statistics_divergence(self.folder_result_sigma[:,1])
         names = (['file', self.folder_name, description1, "unit: ", self.label, "..."])
         parameter_info = (
-            ["vertical w(z)", "  horizontal w(z)", "pointing_vertical ", "pointing_horizontal", "FWHM_v", "FWHM_h"])
+            ["horizontal w(z)", "  vertical w(z)", "pointing_horizontal", "pointing_vertical", "FWHM_h", "FWHM_v"])
         return np.vstack((parameter_info, names, self.folder_result_sigma))
 
     def save_data(self, description1, file_name):
@@ -227,8 +256,8 @@ class BatchStack:
 
         plt.figure(5)
         x_axis = np.arange(0, len(self.file_list))
-        plt.scatter(x_axis, self.folder_result_sigma[:, -2], label='vertical FWHM ' + file_name[-18:-5], color="y")
-        plt.scatter(x_axis, self.folder_result_sigma[:, -1], label='horizontal FWHM' + file_name[-18:-5], color="c")
+        plt.scatter(x_axis, self.folder_result_sigma[:, -1], label='vertical FWHM ' + file_name[-18:-5], color="y")
+        plt.scatter(x_axis, self.folder_result_sigma[:, -2], label='horizontal FWHM' + file_name[-18:-5], color="c")
         plt.xlabel('shot number')
         plt.ylabel(self.label)
         #plt.ylim(10, 70)
@@ -249,22 +278,23 @@ class BatchStack:
                    fmt='%s')
 
 
-path = "data/10ms_m2500_gauge_off/"
-path_back = "data/10ms_dark/"
+path = "data/38A_4x4_0.25s/"
+path_back = "data/dark_4x4_0.25s/"
 avg_background_image = basic_image_app.ImageStackMeanValue(basic_image_app.get_file_list(path_back), path_back)
 avg_backround_img = avg_background_image.average_stack()
 # requires, path, width_of area to calculate center of intensity (must be in row of 2)
 
 #tofill: path, background_image or None, coordinates - in relation to crop-coordinates (see class 1)
-crop_coordinates = ([0,300, 1150,1420])
-fixed_coordinates = ([150,150])
+#y1,y2, x1,x2
+crop_coordinates = ([240, 450, 57,250])
+fixed_coordinates = ([ 86, 76])
 my_result = BatchStack(path, avg_backround_img,100, crop_coordinates, fixed_coordinates)
 my_result.evaluate_folder()
 
 # rescale is factor for e.g. px or magnification size, changes (float, str()) str is unit name
-my_result.scale_result(13.5/7.42, "um")
+my_result.scale_result((15*4)*(82/1200), "um")
 #my_result.scale_result(1000/2.625, "mrad")
-my_result.save_data('XPL', "20210623_10ms_pos1_threshold")
-plt.ylim(-60,60)
+my_result.save_data('LTXM', "20210720_sourcesize_38A_4x4_0.25s")
+#plt.ylim(-60,60)
 plt.show()
 
